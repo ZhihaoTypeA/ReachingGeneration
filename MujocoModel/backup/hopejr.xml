@@ -1,0 +1,91 @@
+<mujoco model="hopejr">
+  <compiler angle="radian" meshdir="assets" autolimits="true" balanceinertia="true"/>
+  <option integrator="implicitfast" impratio="10"/>
+  <default>
+    <default class="hopejr">
+    <material specular="0.5" shininess="0.25"/>
+    <joint armature="0.1" damping="1" axis="0 1 0" range="-1.5707 1.5707"/>
+    <general dyntype="none" biastype="affine" ctrlrange="-1.5707 1.5707"/>
+    <default class="visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+    </default>
+    <default class="collision">
+      <geom group="3"/>
+    </default>
+    </default>
+  </default>
+
+  <asset>
+    <material class="hopejr" name="black" rgba="0.25 0.25 0.25 1"/>
+    <!--Visual-->
+    <mesh file="link0.obj"/>
+    <mesh file="link1.obj"/>
+    <mesh file="link2.obj"/>
+    <mesh file="link3.obj"/>
+    <mesh file="link4.obj"/>
+    <mesh file="link5.obj"/>
+    <mesh file="link6.obj"/>
+    <mesh file="link7.obj"/>
+  </asset>
+  
+  <worldbody>
+    <light name="top" pos="0 0 2" mode="trackcom"/>
+    <body name="link0" childclass="hopejr" pos="0 0 1" quat="0 1 0 0">
+      <inertial mass="5.403378" pos="-0.000073 0.033213 0.053448" fullinertia="1.374e-2 1.65e-2 8.903e-3 5.264e-6 -8.268e-3 5.568e-4"/>
+      <geom mesh="link0" material="black" class="visual"/>
+      <geom class="collision" size="0.001" pos="0 0 0"/>
+      <body name="link1" pos="0 0.06740 0.04520">
+        <inertial mass="1.585758" pos="-0.00008 0.02894 0.00029" fullinertia="9.685e-4 1.304e-3 1.146e-3 -8.921e-7 1.7602e-5 4.159e-6"/>
+        <joint name="joint1" range="-1.5707 1.5707" axis="0 -1 0"/><!-- -90~90 -->
+        <geom mesh="link1" material="black" class="visual" pos="0 -0.06740 -0.04520"/>
+        <geom class="collision" size="0.001" pos="0 0 0"/>
+        <body name="link2" pos="0.00009 0.05560 -0.00001">
+          <inertial mass="2.433807" pos="0.01276 0.01468 0.07502" fullinertia="3.709e-3 4.261e-3 1.666e-3 -9.407e-5 -8.015e-4 -3.281e-4"/>
+          <joint name="joint2" range="0 2.0943" axis="-0.9937 0 0.1123"/><!-- 0~120 -->
+          <geom mesh="link2" material="black" class="visual" pos="-0.00009 -0.123 -0.0451"/>
+          <geom class="collision" size="0.001" pos="0 0 0"/>
+          <body name="link3" pos="0.0096 0.01468 0.08561">
+            <inertial mass="1.429758" pos="0.01513 0.01035 0.08577" fullinertia="1.863e-3 2.250e-3 1.327e-3 -1.311e-4 -7.189e-4 -6.099e-5"/>
+            <joint name="joint3" range="-1.5707 1.2217" axis="-0.1107 -0.168 -0.9795"/><!-- -90~70 -->
+            <geom mesh="link3" material="black" class="visual" pos="-0.00977 -0.13768 -0.1308"/>
+            <geom class="collision" size="0.001" pos="0 0 0"/>
+            <body name="link4" pos="0.04984 0.0114 0.10715">
+              <inertial mass="1.189750" pos="0.02232 -0.00353 0.03229" fullinertia="9.797e-4 8.950e-4 9.326e-4 -9.865e-5 -1.510e-4 -9.981e-5"/>
+              <joint name="joint4" range="-0.2617 1.7453" axis="0.1286 0.9749 -0.1818"/><!-- -15~100 -->
+              <geom mesh="link4" material="black" class="visual" pos="-0.05961 -0.14909 -0.23795"/>
+              <geom class="collision" size="0.001" pos="0 0 0"/>
+              <body name="link5" pos="0.03744 0.00411 0.04886">
+                <inertial mass="1.179762" pos="0.03304 0.00157 0.04315" fullinertia="1.011e-3 1.228e-3 9.410e-4 1.144e-5 -2.305e-4 -4.775e-5"/>
+                <joint name="joint5" range="-0.8726 2.0943" axis="-0.6071 -0.0675 -0.7918"/><!-- -50~120 -->
+                <geom mesh="link5" material="black" class="visual" pos="-0.09706 -0.15321 -0.28682"/>
+                <geom class="collision" size="0.001" pos="0 0 0"/>
+                <body name="link6" pos="0.05639 0.00644 0.07376">
+                  <inertial mass="0.203724" pos="0.00688 0.00170 0.00610" fullinertia="9.910e-5 8.856e-5 1.056e-4 3.921e-6 1.240e-5 -8.617e-7"/>
+                  <joint name="joint6" range="-0.5235 0.1745" axis="-0.5397 0.7664 0.3484"/><!-- -20~10 -->
+                  <geom mesh="link6" material="black" class="visual" pos="-0.15346 -0.15965 -0.36059"/>
+                  <geom class="collision" size="0.001" pos="0 0 0"/>
+                  <body name="link7" pos="0.02067 0.00463 0.02124">
+                    <inertial mass="1.932008" pos="0.04417 0.00783 0.03393" fullinertia="3.309e-3 5.223e-3 3.204e-3 -3.542e-4 -1.491e-3 -3.674e-5"/>
+                    <joint name="joint7" range="-0.8726 0.1745" axis="0.4888 0.6222 -0.6115"/><!-- -50~10 -->
+                    <geom mesh="link7" material="black" class="visual" pos="-0.17413 -0.16428 -0.38183"/>
+                    <geom class="collision" size="0.001" pos="0 0 0"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <general class="hopejr" name="actuator1" joint="joint1" gainprm="4500" biasprm="0 -4500 -450" ctrlrange="-1.5707 1.5707"/>
+    <general class="hopejr" name="actuator2" joint="joint2" gainprm="4500" biasprm="0 -4500 -450" ctrlrange="0 2.0943"/>
+    <general class="hopejr" name="actuator3" joint="joint3" gainprm="3500" biasprm="0 -3500 -350" ctrlrange="-1.5707 1.2217"/>
+    <general class="hopejr" name="actuator4" joint="joint4" gainprm="3500" biasprm="0 -3500 -350" ctrlrange="-0.2617 1.7453"/>
+    <general class="hopejr" name="actuator5" joint="joint5" gainprm="2000" biasprm="0 -2000 -200" ctrlrange="-0.8726 2.0943"/>
+    <general class="hopejr" name="actuator6" joint="joint6" gainprm="2000" biasprm="0 -2000 -200" ctrlrange="-0.5235 0.1745"/>
+    <general class="hopejr" name="actuator7" joint="joint7" gainprm="2000" biasprm="0 -2000 -200" ctrlrange="-0.8726 0.1745"/>
+  </actuator>
+</mujoco>

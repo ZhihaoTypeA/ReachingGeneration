@@ -1,0 +1,80 @@
+<mujoco model="hopejr">
+  <compiler angle="radian" meshdir="assets" autolimits="true" balanceinertia="true"/>
+  <option integrator="implicitfast" impratio="10"/>
+  <default>
+    <default class="hopejr">
+    <material specular="0.5" shininess="0.25"/>
+    <joint armature="0.1" damping="1" axis="0 1 0" range="-1.5707 1.5707"/>
+    <general dyntype="none" biastype="affine" ctrlrange="-1.5707 1.5707"/>
+    <default class="visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+    </default>
+    <default class="collision">
+      <geom type="mesh" group="3" contype="2" conaffinity="1"/>
+    </default>
+    </default>
+  </default>
+
+  <asset>
+    <material class="hopejr" name="black" rgba="0.25 0.25 0.25 1"/>
+    <!--Collision-->
+    <mesh name="hand_c" file="hand.stl"/>
+    <mesh name="link5_c" file="link5.stl"/>
+    <!--Visual-->
+    <mesh file="link0.obj"/>
+    <mesh file="link1.obj"/>
+    <mesh file="link2.obj"/>
+    <mesh file="link3.obj"/>
+    <mesh file="link4.obj"/>
+    <mesh file="link5.obj"/>
+    <mesh file="link6.obj"/>
+    <mesh file="link7.obj"/>
+  </asset>
+  
+  <worldbody>
+    <light name="top" pos="0 0 2" mode="trackcom"/>
+    <body name="link0" childclass="hopejr" pos="0 0 1" quat="0 1 0 0">
+      <geom mesh="link0" material="black" class="visual"/>
+      <body name="link1" pos="0 0.06740 0.04520">
+        <joint name="joint1" range="-1.5707 1.5707" axis="0 -1 0"/><!-- -90~90 -->
+        <geom mesh="link1" material="black" class="visual" pos="0 -0.06740 -0.04520"/>
+        <body name="link2" pos="0.00009 0.05560 -0.00001">
+          <joint name="joint2" range="0 2.0943" axis="-0.9937 0 0.1123"/><!-- 0~120 -->
+          <geom mesh="link2" material="black" class="visual" pos="-0.00009 -0.123 -0.0451"/>
+          <body name="link3" pos="0.0096 0.01468 0.08561">
+            <joint name="joint3" range="-1.5707 1.2217" axis="-0.1107 -0.168 -0.9795"/><!-- -90~70 -->
+            <geom mesh="link3" material="black" class="visual" pos="-0.00977 -0.13768 -0.1308"/>
+            <body name="link4" pos="0.04984 0.0114 0.10715">
+              <joint name="joint4" range="-0.2617 1.7453" axis="0.1286 0.9749 -0.1818"/><!-- -15~100 -->
+              <geom mesh="link4" material="black" class="visual" pos="-0.05961 -0.14909 -0.23795"/>
+              <body name="link5" pos="0.03744 0.00411 0.04886">
+                <joint name="joint5" range="-0.8726 2.0943" axis="-0.6071 -0.0675 -0.7918"/><!-- -50~120 -->
+                <geom mesh="link5" material="black" class="visual" pos="-0.09706 -0.15321 -0.28682"/>
+                <geom name="link5_geom" mesh="link5_c" class="collision" pos="-0.09706 -0.15321 -0.28682"/>
+                <body name="link6" pos="0.05639 0.00644 0.07376">
+                  <joint name="joint6" range="-0.5235 0.1745" axis="-0.5397 0.7664 0.3484"/><!-- -20~10 -->
+                  <geom mesh="link6" material="black" class="visual" pos="-0.15346 -0.15965 -0.36059"/>
+                  <body name="link7" pos="0.02067 0.00463 0.02124">
+                    <joint name="joint7" range="-0.8726 0.1745" axis="0.4888 0.6222 -0.6115"/><!-- -50~10 -->
+                    <geom mesh="link7" material="black" class="visual" pos="-0.17413 -0.16428 -0.38183"/>
+                    <geom name="hand_geom" mesh="hand_c" class="collision" pos="-0.17413 -0.16428 -0.38183"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <general class="hopejr" name="actuator1" joint="joint1" gainprm="4500" biasprm="0 -4500 -450" ctrlrange="-1.5707 1.5707"/>
+    <general class="hopejr" name="actuator2" joint="joint2" gainprm="4500" biasprm="0 -4500 -450" ctrlrange="0 2.0943"/>
+    <general class="hopejr" name="actuator3" joint="joint3" gainprm="3500" biasprm="0 -3500 -350" ctrlrange="-1.5707 1.2217"/>
+    <general class="hopejr" name="actuator4" joint="joint4" gainprm="3500" biasprm="0 -3500 -350" ctrlrange="-0.2617 1.7453"/>
+    <general class="hopejr" name="actuator5" joint="joint5" gainprm="2000" biasprm="0 -2000 -200" ctrlrange="-0.8726 2.0943"/>
+    <general class="hopejr" name="actuator6" joint="joint6" gainprm="2000" biasprm="0 -2000 -200" ctrlrange="-0.5235 0.1745"/>
+    <general class="hopejr" name="actuator7" joint="joint7" gainprm="2000" biasprm="0 -2000 -200" ctrlrange="-0.8726 0.1745"/>
+  </actuator>
+</mujoco>

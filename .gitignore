@@ -1,0 +1,7 @@
+/.vscode
+/backup
+/data
+
+*.pt
+*.pth
+*.ckpt
