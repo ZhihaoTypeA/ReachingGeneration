@@ -1,10 +1,10 @@
 # HopeJr Reaching Generation
 
-A robotic arm reaching motion generation project based on optimal control methods and Diffusion Policy, using the open-source HopeJr humanoid robotic arm.
+A robotic arm reaching motion generation project based on optimal control methods and Diffusion/Flow Matching Policy, using the open-source HopeJr humanoid robotic arm.
 
 ## Project Overview
 
-This project combines optimal control theory with Diffusion Policy to generate trajectories for robotic arm reaching tasks with obstacle avoidance. The project constructs a complete robotic arm motion planning solution through large-scale data generation and deep learning training.
+This project combines optimal control theory with Imitation learning to generate trajectories for robotic arm reaching tasks. The project constructs a complete robotic arm motion planning solution through large-scale data generation and deep learning training.
 
 ## Core Functional Modules
 
@@ -21,9 +21,14 @@ This project combines optimal control theory with Diffusion Policy to generate t
 - **hopejr_DatasetProcessor.py**: Converts optimizer-generated trajectory data into PyTorch-compatible training format with specific horizon for diffusion policy
 - **hopejr_ReplayerDataset.py**: Dataset visualization and trajectory playback tool
 
-### 4. Deep Learning Training and Inference
+### 4. Training and Inference
+##### a. Diffusion Policy
 - **hopejr_DPTrainer.py**: Diffusion Policy network architecture definition and training pipeline
 - **hopejr_DPInference.py**: Loads trained models and performs real-time control testing in MuJoCo environment
+  
+##### b. Flow Matching Policy
+- **hopejr_FMTrainer.py**: Flow Matching Policy network architecture definition and training pipeline
+- **hopejr_FMInference.py**: Loads trained models and performs real-time control testing in MuJoCo environment
 
 ## Technical Features
 
@@ -56,12 +61,18 @@ python scripts/hopejr_DatasetProcessor.py
 ```python
 #Train Diffusion Policy model
 python scripts/hopejr_DPTrainer.py
+
+#Train Flow Matching Policy model
+python scripts/hopejr_FMTrainer.py
 ```
 
 ### Model Testing
 ```python
-#Test trained model in MuJoCo environment
+#Test trained DPmodel in MuJoCo environment
 python scripts/hopejr_DPInference.py
+
+#Test trained FMmodel in MuJoCo environment
+python scripts/hopejr_FMInference.py
 ```
 
 ## Contributions and Support
