@@ -57,16 +57,16 @@ class TrajectoryDataProcessor:
             obstacle_pos = traj['obstacle_pos']
 
             
-            joint_actions = np.diff(q_traj, axis=0)
+            # joint_actions = np.diff(q_traj, axis=0)
             
             for t in range(len(q_traj) - prediction_horizon):
                 obs = np.concatenate([
                     q_traj[t],
-                    target_pos,
-                    obstacle_pos
+                    target_pos
+                    # obstacle_pos
                 ]).astype(np.float32)
                 
-                action_seq = joint_actions[t:t+prediction_horizon].astype(np.float32)
+                action_seq = q_traj[t+1:t+1+prediction_horizon].astype(np.float32)
                 
                 observations.append(obs)
                 actions.append(action_seq)

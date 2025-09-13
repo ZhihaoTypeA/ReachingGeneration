@@ -73,10 +73,7 @@ class ConditionEncoder(nn.Module):
         self.time_embedding = SinusoidalPositionEmbedding(time_emb_dim)
         self.time_proj = nn.Linear(time_emb_dim, d_model)
 
-        # #Obs type position embedding (joint, target position, obstacle position, time position)
-        # self.condition_pos_embedding = nn.Parameter(torch.randn(4, d_model))
-
-        #Obs type position embedding (joint, target position, obstacle position, time position)
+        #Obs type position embedding (joint, target position, time position)
         self.condition_pos_embedding = nn.Parameter(torch.randn(3, d_model))
 
         self.norm = nn.LayerNorm(d_model)
@@ -86,7 +83,7 @@ class ConditionEncoder(nn.Module):
 
         joint_pos = obs[:, :7]
         target_pos = obs[:, 7:10]
-        obstacle_pos = obs[:, 10:13]
+        # obstacle_pos = obs[:, 10:13]
 
         joint_feature = self.joint_encoder(joint_pos) #(batch, d_model)
         target_feature = self.target_encoder(target_pos)
@@ -95,8 +92,7 @@ class ConditionEncoder(nn.Module):
         time_emb = self.time_embedding(timestep) #(batch, time_embed_dim)
         time_feature = self.time_proj(time_emb) #(batch, d_model)
 
-        # condition = torch.stack([joint_feature, target_feature, obstacle_feature, time_feature], dim=1) #(batch, 4, d_model)
-        condition = torch.stack([joint_feature, target_feature, time_feature], dim=1) #(batch, 4, d_model)
+        condition = torch.stack([joint_feature, target_feature, time_feature], dim=1) #(batch, 3, d_model)
 
         condition = condition + self.condition_pos_embedding.unsqueeze(0)
         condition = self.norm(condition)
@@ -190,10 +186,10 @@ class TransformerBlock(nn.Module):
         
         return x
 
-class DiffusionPolicyNetwork(nn.Module):
+class FlowMatchingPolicyNetwork(nn.Module):
     def __init__(
             self,
-            obs_dim: int = 13,
+            obs_dim: int = 10,
             action_dim: int = 7,
             action_horizon: int = 8,
             d_model: int = 512,
@@ -212,7 +208,7 @@ class DiffusionPolicyNetwork(nn.Module):
 
         self.condition_encoder = ConditionEncoder(d_model, time_emb_dim)
 
-        self.action_embeddfing = nn.Linear(action_dim, d_model)
+        self.action_embedding = nn.Linear(action_dim, d_model)
 
         #Action position (for learning step in horizon sequence)
         self.action_pos_embedding = nn.Parameter(torch.randn(action_horizon, d_model))
@@ -238,9 +234,9 @@ class DiffusionPolicyNetwork(nn.Module):
     def forward(self, noisy_actions, obs, timestep):
         batch_size = noisy_actions.size(0)
 
-        condition = self.condition_encoder(obs, timestep) #(batch, 3, d_model)
+        condition = self.condition_encoder(obs, timestep) #(batch,3, d_model)
 
-        x = self.action_embeddfing(noisy_actions) #(batch, action_horizon, d_model)
+        x = self.action_embedding(noisy_actions) #(batch, action_horizon, d_model)
         
         x = x + self.action_pos_embedding.unsqueeze(0)
 
@@ -248,141 +244,142 @@ class DiffusionPolicyNetwork(nn.Module):
             x = layer(x, condition)
 
         x = self.output_norm(x)
-        predicted_noise = self.output_proj(x) #(batch, action_horizon, action_dim)
+        predicted_result = self.output_proj(x) #(batch, action_horizon, action_dim)
 
-        return predicted_noise
+        return predicted_result
 
-class DiffusionPolicy(nn.Module):
+class FlowMatchingPolicy(nn.Module):
     def __init__(
         self,
-        network: DiffusionPolicyNetwork,
-        num_diffusion_steps: int = 100,
-        beta_schedule: str = "cosine"
+        network: FlowMatchingPolicyNetwork,
+        sigma_min: float = 1e-4,
+        sigma_max: float = 1.0,
+        use_optimal_transport: bool = True
     ):
         super().__init__()
         self.network = network
-        self.num_diffusion_steps = num_diffusion_steps
+        self.sigma_min = sigma_min
+        self.sigma_max = sigma_max
+        self.use_optimal_transport = use_optimal_transport
 
-        #Noise schedule
-        if beta_schedule == "linear":
-            betas = torch.linspace(0.0001, 0.02, num_diffusion_steps)
-        elif beta_schedule == "cosine":
-            s = 0.008
-            steps = num_diffusion_steps + 1
-            x = torch.linspace(0, num_diffusion_steps, steps)
-            alphas_cumprod = torch.cos(((x / num_diffusion_steps) + s) / (1 + s) * torch.pi * 0.5) ** 2
-            alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-            betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-            betas = torch.clamp(betas, 0.0001, 0.9999)
-
-        self.register_buffer('betas', betas)
-        alphas = 1. - betas
-        alphas_cumprod = torch.cumprod(alphas, dim=0)
-        alphas_cumprod_prev = F.pad(alphas_cumprod[:-1], (1, 0), value=1.0)
-        
-        self.register_buffer('alphas_cumprod', alphas_cumprod)
-        self.register_buffer('alphas_cumprod_prev', alphas_cumprod_prev)
-        #Forward noise addition param
-        self.register_buffer('sqrt_alphas_cumprod', torch.sqrt(alphas_cumprod))
-        self.register_buffer('sqrt_one_minus_alphas_cumprod', torch.sqrt(1. - alphas_cumprod))
-        #Backward denoising param
-        self.register_buffer('sqrt_recip_alphas_cumprod', torch.sqrt(1. / alphas_cumprod))
-        self.register_buffer('sqrt_recipm1_alphas_cumprod', torch.sqrt(1. / alphas_cumprod - 1))
-
-
-    def add_noise(self, original_samples, noise, timesteps):
-        sqrt_alpha_cumprod = self.sqrt_alphas_cumprod[timesteps]
-        sqrt_one_minus_alpha_cumprod = self.sqrt_one_minus_alphas_cumprod[timesteps]
-
-        while len(sqrt_alpha_cumprod.shape) < len(original_samples.shape):
-            sqrt_alpha_cumprod = sqrt_alpha_cumprod.unsqueeze(-1)
-            sqrt_one_minus_alpha_cumprod = sqrt_one_minus_alpha_cumprod.unsqueeze(-1)
-
-        noisy_samples = (sqrt_alpha_cumprod * original_samples + 
-                        sqrt_one_minus_alpha_cumprod * noise)
-        return noisy_samples
+    def sample_time(self, batch_size: int, device: torch.device) -> torch.Tensor:
+        return torch.rand(batch_size, device=device)
     
-    def training_step(self, batch):
-        observations = batch['observations']  #(batch, obs_dim)
-        actions = batch['actions']  #(batch, action_horizon, action_dim)
+    def get_path(self, x0: torch.Tensor, x1: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        t = t.view(-1, 1, 1)
         
+        if self.use_optimal_transport:
+            sigma_t = self.sigma_min + t * (self.sigma_max - self.sigma_min)
+            epsilon = torch.randn_like(x0)
+            #x_t = (1-t)x_0 + tx_1 + σ(t)ε 
+            x_t = (1 - t) * x0 + t * x1 + sigma_t * epsilon
+            sigma_prime = self.sigma_max - self.sigma_min
+            v_t = x1 - x0 + sigma_prime * epsilon
+        else:
+            x_t = (1 - t) * x0 + t * x1
+            v_t = x1 - x0
+        
+        return x_t, v_t
+
+    def training_step(self, batch: dict) -> dict:
+        observations = batch['observations']
+        actions = batch['actions']
         batch_size = actions.shape[0]
         device = actions.device
+        
+        t = self.sample_time(batch_size, device)
+        x0 = torch.randn_like(actions)
+        x_t, v_t = self.get_path(x0, actions, t)
+        
 
-        timesteps = torch.randint(0, self.num_diffusion_steps, (batch_size,), device=device)
-        noise = torch.randn_like(actions)
-        noisy_actions = self.add_noise(actions, noise, timesteps)
-        predicted_noise = self.network(noisy_actions, observations, timesteps)
-        loss = F.mse_loss(predicted_noise, noise)
+        predicted_v = self.network(x_t, observations, t)
+        
 
-        return loss
-    
-    def ddim_step(self, sample, model_output, timestep, next_timestep, eta=0.0):
-        """
-        修正的DDIM采样步骤
-        eta=0.0 表示确定性采样（标准DDIM）
-        """
-        alpha_cumprod = self.alphas_cumprod[timestep]
-        alpha_cumprod_next = self.alphas_cumprod[next_timestep] if next_timestep >= 0 else torch.tensor(1.0)
+        fm_loss = F.mse_loss(predicted_v, v_t)
         
-        beta_cumprod = 1 - alpha_cumprod
-        beta_cumprod_next = 1 - alpha_cumprod_next
-        
-        # 预测原始样本 x_0
-        pred_original_sample = (sample - torch.sqrt(beta_cumprod) * model_output) / torch.sqrt(alpha_cumprod)
-        
-        # 计算方差
-        variance = (beta_cumprod_next / beta_cumprod) * (1 - alpha_cumprod / alpha_cumprod_next)
-        std_dev_t = eta * torch.sqrt(variance)
-        
-        # 计算"direction pointing to x_t"
-        pred_sample_direction = torch.sqrt(1 - alpha_cumprod_next - std_dev_t**2) * model_output
-        
-        # 计算 x_{t-1}
-        pred_sample = torch.sqrt(alpha_cumprod_next) * pred_original_sample + pred_sample_direction
-        
-        if eta > 0:
-            noise = torch.randn_like(sample)
-            pred_sample = pred_sample + std_dev_t * noise
-        
-        return pred_sample
+        return {
+            'total_loss': fm_loss,
+            'fm_loss': fm_loss
+        }
 
     @torch.no_grad()
-    def sample(self, obs, num_inference_steps=50, generator=None, eta=0.0):
-        """修正的采样方法"""
-        device = obs.device
-        batch_size = obs.shape[0]
+    def sample_euler(
+        self, 
+        observations: torch.Tensor, 
+        num_steps: int = 20,
+        return_trajectory: bool = False
+    ) -> torch.Tensor:
+        device = observations.device
+        batch_size = observations.shape[0]
         
         shape = (batch_size, self.network.action_horizon, self.network.action_dim)
-        actions = torch.randn(shape, device=device, generator=generator)
+        x = torch.randn(shape, device=device)
         
-        # 修正时间步生成方式
-        step_ratio = self.num_diffusion_steps // num_inference_steps
-        timesteps = list(range(0, self.num_diffusion_steps, step_ratio))[:num_inference_steps]
-        timesteps = timesteps[::-1]  # 从大到小
-        timesteps = torch.tensor(timesteps, dtype=torch.long, device=device)
+        dt = 1.0 / num_steps
+        trajectory = [x.clone()] if return_trajectory else []
         
-        for i, timestep in enumerate(timesteps):
-            t = timestep.expand(batch_size)
+        for i in range(num_steps):
+            t = torch.full((batch_size,), i * dt, device=device)
+            v = self.network(x, observations, t)
+            x = x + dt * v
             
-            # 预测噪声
-            noise_pred = self.network(actions, obs, t)
-            
-            # 确定下一个时间步
-            next_timestep = timesteps[i + 1] if i < len(timesteps) - 1 else -1
-            
-            # DDIM步骤
-            if next_timestep >= 0:
-                actions = self.ddim_step(actions, noise_pred, timestep, next_timestep, eta)
-            else:
-                # 最终步骤：直接预测x_0
-                alpha_cumprod = self.alphas_cumprod[timestep]
-                actions = (actions - torch.sqrt(1 - alpha_cumprod) * noise_pred) / torch.sqrt(alpha_cumprod)
+            if return_trajectory:
+                trajectory.append(x.clone())
         
-        return actions
+        if return_trajectory:
+            return torch.stack(trajectory, dim=1)  #(batch, steps+1, seq_len, dim)
+        return x
+    
+    @torch.no_grad()
+    def sample_rk4(
+        self, 
+        observations: torch.Tensor, 
+        num_steps: int = 10,
+        return_trajectory: bool = False
+    ) -> torch.Tensor:
+        device = observations.device
+        batch_size = observations.shape[0]
+        
+        shape = (batch_size, self.network.action_horizon, self.network.action_dim)
+        x = torch.randn(shape, device=device)
+        
+        dt = 1.0 / num_steps
+        trajectory = [x.clone()] if return_trajectory else []
+        
+        for i in range(num_steps):
+            t = i * dt
+
+            t_tensor = torch.full((batch_size,), t, device=device)
+            k1 = self.network(x, observations, t_tensor)
+            
+            t_tensor = torch.full((batch_size,), t + dt/2, device=device)
+            k2 = self.network(x + dt/2 * k1, observations, t_tensor)
+            
+            k3 = self.network(x + dt/2 * k2, observations, t_tensor)
+            
+            t_tensor = torch.full((batch_size,), t + dt, device=device)
+            k4 = self.network(x + dt * k3, observations, t_tensor)
+            
+            x = x + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+            
+            if return_trajectory:
+                trajectory.append(x.clone())
+        
+        if return_trajectory:
+            return torch.stack(trajectory, dim=1)
+        return x
+
+    def sample(self, observations: torch.Tensor, num_steps: int = 20, method: str = 'euler') -> torch.Tensor:
+        if method == 'euler':
+            return self.sample_euler(observations, num_steps)
+        elif method == 'rk4':
+            return self.sample_rk4(observations, num_steps)
+        else:
+            raise ValueError(f"Unknown sampling method: {method}")
+
 
 #Load data from npz file generated by SLSQP
-class DiffusionPolicyDataset(torch.utils.data.Dataset):
+class FlowMatchingDataset(torch.utils.data.Dataset):
     def __init__(self, data_file, scaler_file=None, metadata_file=None):
         data = np.load(data_file)
         self.observations = torch.from_numpy(data['observations']).float()
@@ -400,40 +397,6 @@ class DiffusionPolicyDataset(torch.utils.data.Dataset):
             'observations': self.observations[idx],
             'actions': self.actions[idx]
         }
-
-class EarlyStopping:
-    def __init__(self, patience=10, min_delta=1e-6, restore_best_weights=True):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.restore_best_weights = restore_best_weights
-        self.best_loss = float('inf')
-        self.counter = 0
-        self.best_epoch = 0
-        self.best_weights = None
-
-    def __call__(self, val_loss, model, epoch):
-        if val_loss < self.best_loss - self.min_delta:
-            self.best_loss = val_loss
-            self.counter = 0
-            self.best_epoch = epoch
-            if self.restore_best_weights:
-                self.best_weights = model.state_dict().copy()
-            return False
-        else:
-            self.counter += 1
-            if self.counter >= self.patience:
-                if self.restore_best_weights and self.best_weights is not None:
-                    model.load_state_dict(self.best_weights)
-                    print(f"Early stopping triggered. Restored weights from epoch {self.best_epoch}")
-                return True
-            return False
-
-    def get_best_info(self):
-        return {
-            'best_loss': self.best_loss,
-            'best_epoch': self.best_epoch,
-            'patience_counter': self.counter
-        }
         
 def train_model(
     train_data_file: str,
@@ -445,25 +408,25 @@ def train_model(
 ):
     default_config = {
         'batch_size': 128,
-        'learning_rate': 1e-4,
+        'learning_rate': 3e-4,
         'num_epochs': 100,
-        'num_diffusion_steps': 200,
-        'beta_schedule': 'cosine',
-        'num_inference_steps': 50,
+        
+        'fm_sigma_min': 1e-4,
+        'fm_sigma_max': 0.1,
+        'fm_use_optimal_transport': False,
+        'fm_num_inference_steps': 20,
+
         'gradient_clip': 1.0,
-        'save_interval': 20,
+        'save_interval': 10,
         'eval_interval': 5,
-        'warmup_steps': 1000,
-        'early_stopping_patience': 3,
-        'early_stopping_min_delta': 1e-6,
-        'early_stopping_restore_weights': True,
+        'weight_decay': 1e-4,
         
         'obs_dim': 10,
         'action_dim': 7,
         'action_horizon': 15,
         'd_model': 256,
         'num_heads': 8,
-        'num_layers': 4,
+        'num_layers': 6,
         'd_ff': 512,
         'dropout': 0.1,
         'time_emb_dim': 128
@@ -484,9 +447,9 @@ def train_model(
     print(f"TensorBoard logs will be saved to: {log_dir}")
 
     print("-Train dataset-")
-    train_dataset = DiffusionPolicyDataset(train_data_file)
+    train_dataset = FlowMatchingDataset(train_data_file)
     print("-Test dataset-")
-    test_dataset = DiffusionPolicyDataset(test_data_file)
+    test_dataset = FlowMatchingDataset(test_data_file)
     
     train_loader = torch.utils.data.DataLoader(
         train_dataset, 
@@ -501,7 +464,7 @@ def train_model(
         num_workers=4
     )
     
-    network = DiffusionPolicyNetwork(
+    network = FlowMatchingPolicyNetwork(
         obs_dim=config['obs_dim'],
         action_dim=config['action_dim'],
         action_horizon=config['action_horizon'],
@@ -513,20 +476,15 @@ def train_model(
         time_emb_dim=config['time_emb_dim']
     ).to(device)
     
-    policy = DiffusionPolicy(
+    policy = FlowMatchingPolicy(
         network, 
-        num_diffusion_steps=config['num_diffusion_steps'],
-        beta_schedule=config['beta_schedule']
+        sigma_min=config['fm_sigma_min'],
+        sigma_max=config['fm_sigma_max'],
+        use_optimal_transport=config['fm_use_optimal_transport']
     ).to(device)
 
     optimizer = torch.optim.AdamW(policy.parameters(), lr=config['learning_rate'], weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['num_epochs'])
-
-    early_stopping = EarlyStopping(
-        patience=config['early_stopping_patience'],
-        min_delta=config['early_stopping_min_delta'],
-        restore_best_weights=config['early_stopping_restore_weights']
-    )
 
     config_with_scaler = config.copy()
     config_with_scaler['scaler_file'] = str(scaler_file) if scaler_file else None
@@ -539,7 +497,6 @@ def train_model(
     learning_rates = []
     best_loss = float('inf')
     global_step = 0
-    early_stopped = False
 
     print("Starting training...")
     for epoch in range(config['num_epochs']):
@@ -552,7 +509,8 @@ def train_model(
             batch = {k: v.to(device) for k, v in batch.items()}
             
             #Forward
-            loss = policy.training_step(batch)
+            loss_dict = policy.training_step(batch)
+            loss = loss_dict['total_loss']
             epoch_loss += loss.item()
             num_batches += 1
             
@@ -594,7 +552,8 @@ def train_model(
             with torch.no_grad():
                 for batch in eval_pbar:
                     batch = {k: v.to(device) for k, v in batch.items()}
-                    loss = policy.training_step(batch)
+                    loss_dict = policy.training_step(batch)
+                    loss = loss_dict['total_loss']
                     eval_loss += loss.item()
                     eval_batches += 1
 
@@ -605,13 +564,9 @@ def train_model(
             avg_eval_loss = eval_loss / eval_batches
             eval_losses.append(avg_eval_loss)
             writer.add_scalar('Loss/Eval', avg_eval_loss, epoch)
-            
-            should_stop = early_stopping(avg_eval_loss, policy, epoch)
-            best_info = early_stopping.get_best_info()
-            writer.add_scalar('EarlyStopping/BestLoss', best_info['best_loss'], epoch)
-            writer.add_scalar('EarlyStopping/PatienceCounter', best_info['patience_counter'], epoch)
 
-            print(f"Epoch {epoch:03d} | Train Loss: {avg_train_loss:.4f} | Eval Loss: {avg_eval_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f} | Best Loss: {best_info['best_loss']:.4f} | Patience: {best_info['patience_counter']}/{config['early_stopping_patience']}")
+
+            print(f"Epoch {epoch:03d} | Train Loss: {avg_train_loss:.4f} | Eval Loss: {avg_eval_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f}")
             
             #Save best
             if avg_eval_loss < best_loss:
@@ -624,12 +579,6 @@ def train_model(
                     'loss': best_loss
                 }, save_dir / 'best_model.pth')
                 writer.add_text('Best_Model', f'New best model at epoch {epoch} with eval loss {best_loss:.4f}')
-
-            if should_stop:
-                print(f"\nEarly stopping triggered at epoch {epoch}")
-                print(f"Best validation loss: {best_info['best_loss']:.4f} at epoch {best_info['best_epoch']}")
-                early_stopped = True
-                break
 
         else:
             eval_losses.append(None)
@@ -645,19 +594,15 @@ def train_model(
             }, save_dir / f'checkpoint_epoch_{epoch}.pth')
 
     #Final save if training completed without early stopping
-    if not early_stopped:
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': policy.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'config': config_with_scaler,
-            'loss': avg_train_loss
-        }, save_dir / 'final_model.pth')
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': policy.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'config': config_with_scaler,
+        'loss': avg_train_loss
+    }, save_dir / 'final_model.pth')
     
     print("Training completed!")
-    if early_stopped:
-        best_info = early_stopping.get_best_info()
-        print(f"Training stopped early. Best model from epoch {best_info['best_epoch']} with loss {best_info['best_loss']:.4f}")
 
     writer.close()
     print(f"Training results saved to: {save_dir}")
@@ -680,7 +625,7 @@ def load_and_infer(
     config = checkpoint['config']
     
     # Create model
-    network = DiffusionPolicyNetwork(
+    network = FlowMatchingPolicyNetwork(
         obs_dim=config['obs_dim'],
         action_dim=config['action_dim'],
         action_horizon=config['action_horizon'],
@@ -692,10 +637,11 @@ def load_and_infer(
         time_emb_dim=config['time_emb_dim']
     ).to(device)
     
-    policy = DiffusionPolicy(
+    policy = FlowMatchingPolicy(
         network, 
-        num_diffusion_steps=config['num_diffusion_steps'],
-        beta_schedule=config['beta_schedule']
+        sigma_min=config['fm_sigma_min'],
+        sigma_max=config['fm_sigma_max'],
+        use_optimal_transport=config['fm_use_optimal_transport']
     ).to(device)
     
     # Load weights
@@ -706,7 +652,7 @@ def load_and_infer(
     
     # Load dataset
     print(f"\nLoading dataset from: {data_file}")
-    dataset = DiffusionPolicyDataset(data_file)
+    dataset = FlowMatchingDataset(data_file)
     
     # Randomly select a sample
     random_idx = random.randint(0, len(dataset) - 1)
@@ -724,7 +670,8 @@ def load_and_infer(
     with torch.no_grad():
         predicted_actions = policy.sample(
             observations, 
-            num_inference_steps=num_inference_steps
+            num_steps=num_inference_steps,
+            method='rk4'
         )
     
     # Convert to numpy for printing
@@ -753,8 +700,8 @@ def load_and_infer(
     # Calculate and print differences
     print(f"\nAction Differences (Predicted - Ground Truth):")
     differences = predicted_actions - ground_truth_actions
-    for i, diff_step in enumerate(differences):
-        print(f"  Step {i:2d}: [{', '.join([f'{x:8.4f}' for x in diff_step])}]")
+    for i, infer_step in enumerate(differences):
+        print(f"  Step {i:2d}: [{', '.join([f'{x:8.4f}' for x in infer_step])}]")
     
     # Print statistics
     mse = np.mean(differences ** 2)
@@ -775,7 +722,7 @@ if __name__ == "__main__":
     test_data_path = os.path.join(project_root_path, 'data', 'Dataset', 'test_data.npz')
     scaler_path = os.path.join(project_root_path, 'data', 'Dataset', 'action_scaler.pkl')
     metadata_path = os.path.join(project_root_path, 'data', 'Dataset', 'dataset_metadata.json')
-    model_save_path = os.path.join(project_root_path, 'data', 'DPModel')
+    model_save_path = os.path.join(project_root_path, 'data', 'FMModel')
 
     #Train
     train_model(
@@ -791,6 +738,6 @@ if __name__ == "__main__":
     load_and_infer(
         model_path=model_path,
         data_file=test_data_path,
-        num_inference_steps=50
+        num_inference_steps=20
     )
 

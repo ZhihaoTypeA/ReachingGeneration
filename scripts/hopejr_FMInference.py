@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from collections import deque
 from pathlib import Path
 
-from hopejr_DPTrainer import DiffusionPolicy, DiffusionPolicyNetwork
+from hopejr_FMTrainer import FlowMatchingPolicy, FlowMatchingPolicyNetwork
 from hopejr_DatasetProcessor import TrajectoryDataProcessor
 
 class ArmController:
@@ -27,7 +27,7 @@ class ArmController:
         self.policy = self._load_model()
         self.n_joints = 7
         self.action_horizon = action_horizon
-        self.obs_dim = 13
+        self.obs_dim = 10
         self.action_dim = 7
         self._find_indices()
 
@@ -40,7 +40,7 @@ class ArmController:
             'joint_positions': [],
             'end_effector_pos': [],
             'target_pos': [],
-            # 'obstacle_pos': [],
+            'obstacle_pos': [],
             'distance_to_target': [],
             'distance_to_obstacle': []
         }
@@ -123,7 +123,7 @@ class ArmController:
         checkpoint = torch.load(self.model_path, map_location=self.device)
         config = checkpoint['config']
         
-        network = DiffusionPolicyNetwork(
+        network = FlowMatchingPolicyNetwork(
             obs_dim=config['obs_dim'],
             action_dim=config['action_dim'],
             action_horizon=config['action_horizon'],
@@ -135,10 +135,11 @@ class ArmController:
             time_emb_dim=config['time_emb_dim']
         ).to(self.device)
         
-        policy = DiffusionPolicy(
-            network,
-            num_diffusion_steps=config['num_diffusion_steps'],
-            beta_schedule=config['beta_schedule']
+        policy = FlowMatchingPolicy(
+            network, 
+            sigma_min=config['fm_sigma_min'],
+            sigma_max=config['fm_sigma_max'],
+            use_optimal_transport=config['fm_use_optimal_transport']
         ).to(self.device)
         
         policy.load_state_dict(checkpoint['model_state_dict'])
@@ -162,7 +163,6 @@ class ArmController:
         else:
             obstacle_pos = np.array([0.3, 0.0, 0.7])
         
-        # obs = np.concatenate([joint_angles, target_pos, obstacle_pos])
         obs = np.concatenate([joint_angles, target_pos])
 
         #Normalize obs using scaler
@@ -191,10 +191,10 @@ class ArmController:
         else:
             return np.array([0.0, 0.0, 0.0])
         
-    def predict_action(self, obs, num_inference_steps):
+    def predict_action(self, obs, num_inference_steps, fm_sample_method='euler'):
         with torch.no_grad():
             obs_tensor = torch.from_numpy(obs).unsqueeze(0).to(self.device)
-            action_tensor = self.policy.sample(obs_tensor, num_inference_steps=num_inference_steps)
+            action_tensor = self.policy.sample(obs_tensor, num_steps=num_inference_steps, method=fm_sample_method)
             action = action_tensor.cpu().numpy()[0]  #(action_horizon, action_dim)
 
         if 'action_scaler' in self.scalers:
@@ -242,7 +242,7 @@ class ArmController:
             'joint_positions': [],
             'end_effector_pos': [],
             'target_pos': [],
-            # 'obstacle_pos': [],
+            'obstacle_pos': [],
             'distance_to_target': [],
             'distance_to_obstacle': []
         }
@@ -266,7 +266,7 @@ class ArmController:
         self.trajectory['distance_to_target'].append(dist_to_target)
         # self.trajectory['distance_to_obstacle'].append(dist_to_obstacle)
 
-    def run_simulation(self, duration=30.0, control_freq=10.0, execute_steps=1, num_inference_steps=50):
+    def run_simulation(self, duration=30.0, control_freq=10.0, execute_steps=1, num_inference_steps=20, fm_sample_method='euler'):
         print("Starting simulation...")
         print("Press 'esc' to exit")
 
@@ -289,7 +289,7 @@ class ArmController:
                     #Different from typical sliding window, here we execute all predicted steps in buffer instead of just executing only first step, to lower the inference freq
                     #Action buffer stores all 8 steps
                     if len(self.action_buffer) == 0 or self.action_step >= execute_steps:
-                        predicted_actions = self.predict_action(obs, num_inference_steps)
+                        predicted_actions = self.predict_action(obs, num_inference_steps, fm_sample_method)
 
                         self.action_buffer.clear()
                         for i in range(self.action_horizon):
@@ -334,7 +334,7 @@ class ArmController:
 
 def main():
     project_root_path = os.path.dirname(os.path.dirname(__file__))
-    model_path = os.path.join(project_root_path, 'data', 'DPModel', 'final_model.pth')
+    model_path = os.path.join(project_root_path, 'data', 'FMModel', 'final_model.pth')
     scene_xml_path = os.path.join(project_root_path, 'MujocoModel', 'scene.xml')
     scalers_dir = os.path.join(project_root_path, 'data', 'Dataset')
 
@@ -349,7 +349,7 @@ def main():
         action_horizon=15
     )
     
-    trajectory = controller.run_simulation(duration=60.0, control_freq=30.0, execute_steps=10, num_inference_steps=10)
+    trajectory = controller.run_simulation(duration=60.0, control_freq=30.0, execute_steps=10, num_inference_steps=10, fm_sample_method='euler')
 
 if __name__ == "__main__":
     main()

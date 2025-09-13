@@ -1,6 +1,8 @@
 /.vscode
 /backup
 /data
+/result
+/scripts/__pycache__
 
 *.pt
 *.pth
