@@ -5,7 +5,10 @@ A robotic arm reaching motion generation project based on optimal control method
 ## Project Overview
 
 This project combines optimal control theory with Imitation learning to generate trajectories for robotic arm reaching tasks. The project constructs a complete robotic arm motion planning solution through large-scale data generation and deep learning training.
-![reaching test](demo/reaching_test1.gif)
+
+<p align="center">
+  <img src="demo/reaching_test1.gif" alt="reaching test"/>
+</p>
 
 ## Core Functional Modules
 
